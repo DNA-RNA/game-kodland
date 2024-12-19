@@ -66,7 +66,7 @@ def on_mouse_down(pos):
         elif buttons["toggle_sound"].collidepoint(pos):
             sound_on = not sound_on
         elif buttons["exit"].collidepoint(pos):
-            exit()  # Oyundan çık
+            exit()  # Exit
 
 
 def update():
