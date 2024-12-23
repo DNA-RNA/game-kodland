@@ -1,196 +1,248 @@
+import pgzrun
 import random
-from pgzero.rect import Rect
-
-# Oyun ekranı boyutları
-TITLE = 'Platformer Ninja'
+'''v2'''
 WIDTH = 800
 HEIGHT = 600
+TILE_SIZE = 50
 
-# Renkler
-ground_color = (50, 50, 50)  # Koyu gri renk
+# Oyun Durumları
+GAME_MENU = 0
+GAME_PLAY = 1
+GAME_OVER = 2
 
-# Zemin seviyesi
-ground_height = 50
-ground_level = HEIGHT - ground_height
-
-# Oyun durumu
-state = "menu"
+game_state = GAME_MENU
 score = 0
-collision_counter = 0  # Çarpışma için sayaç
-music_on = False  # Arka plan müziği durumu
+enemy_move_timer = 0
+enemy_move_delay = 30
+enemies = []
+map_grid = []
+game_over_timer = 0
 
-# Sesler
-jump_sound = "jump-voice"  # 'sounds/jump-voice.ogg'
-run_sound = "run-voice"    # 'sounds/run-voice.ogg'
-background_music = "background-music"  # 'sounds/background-music.ogg'
+# Ses Durumu
+music_playing = True  # Müzik varsayılan olarak açık
 
-# Müzik kapatma düğmesi koordinatları
-music_toggle_rect = Rect((WIDTH - 150, 10), (140, 30))
+# Ninja Sprite'ları
+ninja_run_images = ['run_001', 'run_002', 'run_003', 'run_004', 'run_005']
+ninja_die_image = 'dead'
+ninja_idle_images = ['idle_001', 'idle_002']
 
-def draw():
-    if state == "menu":
-        draw_menu()
-    elif state == "game":
-        draw_game()
-    elif state == "gameover":
-        draw_gameover()
+# Düşman Animasyonları
+enemy_run_images = ['meteorbrown_001', 'meteorbrown_002']
+enemy_idle_image = 'meteorbrown'
 
-def draw_menu():
-    screen.fill((135, 206, 235))  # Açık mavi arka plan
-    start_rect = Rect((WIDTH // 2 - 100, HEIGHT // 2 - 75), (200, 50))
-    sound_rect = Rect((WIDTH // 2 - 100, HEIGHT // 2), (200, 50))
-    exit_rect = Rect((WIDTH // 2 - 100, HEIGHT // 2 + 75), (200, 50))
 
-    screen.draw.filled_rect(start_rect, "white")
-    screen.draw.filled_rect(sound_rect, "white")
-    screen.draw.filled_rect(exit_rect, "white")
-    screen.draw.text("Start Game", center=start_rect.center, color="black")
-    screen.draw.text("Toggle Music", center=sound_rect.center, color="black")
-    screen.draw.text("Exit", center=exit_rect.center, color="black")
+# Düğme Boyutları
+button_width = 200
+button_height = 50
+buttons = [
+    {"text": "Oyuna Başla", "x": WIDTH // 2 - button_width // 2, "y": 200, "action": "start_game"},
+    {"text": "Müzik Aç/Kapat", "x": WIDTH // 2 - button_width // 2, "y": 300, "action": "toggle_music"},
+    {"text": "Çıkış", "x": WIDTH // 2 - button_width // 2, "y": 400, "action": "exit_game"},
+]
 
-def draw_game():
-    screen.blit('sand', (0, 0))  # Arka plan görseli
-    screen.draw.filled_rect(Rect((0, ground_level), (WIDTH, ground_height)), ground_color)  # Zemin çizimi
-    screen.draw.text(f'Score: {score}', color='white', topleft=(10, 10), fontsize=30)
-    screen.draw.filled_rect(music_toggle_rect, "gray")
-    screen.draw.text("Music: ON" if music_on else "Music: OFF", center=music_toggle_rect.center, color="white", fontsize=20)
-    ninja.draw()
-    enemy.draw()
-
-def draw_gameover():
-    screen.fill((135, 206, 235))
-    screen.draw.text("Game Over", center=(WIDTH // 2, HEIGHT // 2 - 50), fontsize=50, color="red")
-    screen.draw.text("Press R to Restart", center=(WIDTH // 2, HEIGHT // 2), fontsize=30, color="white")
-
-class Character:
-    def __init__(self, x, y, images, jump_image, die_image):
+# Ninja Sınıfı
+class Ninja:
+    def __init__(self, x, y):
         self.x = x
         self.y = y
-        self.images = images
-        self.jump_image = jump_image
-        self.die_image = die_image
-        self.current_frame = 0
-        self.image = images[0]
-        self.jumping = False
-        self.speed = 0
-        self.alive = True
-
-    def animate(self):
-        if not self.jumping and self.alive:
-            self.current_frame = (self.current_frame + 1) % len(self.images)
-            self.image = self.images[self.current_frame]
-
-    def update(self):
-        if self.jumping:
-            self.speed += 1
-            self.y += self.speed
-            if self.y >= ground_level - 60:
-                self.y = ground_level - 60
-                self.jumping = False
-
-    def jump(self):
-        if not self.jumping and self.alive:
-            self.jumping = True
-            self.speed = -20
-            self.image = self.jump_image
-            sounds.jump_voice.play()
-
-    def die(self):
-        self.alive = False
-        self.image = self.die_image
+        self.state = "idle"  # "idle", "run", "dead"
+        self.image_index = 0
+        self.actor = Actor(ninja_idle_images[0], (self.x * TILE_SIZE + TILE_SIZE // 2, self.y * TILE_SIZE + TILE_SIZE // 2))
 
     def draw(self):
-        screen.blit(self.image, (self.x, self.y))
+        self.actor.draw()
+
+    def update_animation(self):
+        """Duruma göre animasyonu güncelle."""
+        if self.state == "idle":
+            self.image_index = (self.image_index + 1) % len(ninja_idle_images)
+            self.actor.image = ninja_idle_images[self.image_index]
+        elif self.state == "walk":
+            self.image_index = (self.image_index + 1) % len(ninja_run_images)
+            self.actor.image = ninja_run_images[self.image_index]
+            sounds.run_voice.play()
+        elif self.state == "dead":
+            self.actor.image = ninja_die_image
+
+
+    def move(self, dx, dy):
+        global game_state, game_over_timer
+        if self.state == "dead":  # Ölüm durumunda hareket etme
+            return
+        new_x = self.x + dx
+        new_y = self.y + dy
+
+        if 0 <= new_y < len(map_grid) and 0 <= new_x < len(map_grid[0]):
+            if map_grid[new_y][new_x] == "E":
+                self.state = "dead"
+                game_state = GAME_OVER
+                game_over_timer = 120
+            elif map_grid[new_y][new_x] == "G":
+                global score
+                score += 10
+                create_random_map()
+            elif map_grid[new_y][new_x] == " ":
+                self.x, self.y = new_x, new_y
+                self.state = "walk"
+                animate(self.actor, pos=(self.x * TILE_SIZE + TILE_SIZE // 2, self.y * TILE_SIZE + TILE_SIZE // 2), duration=0.2, on_finished=self.stop)
+    def stop(self):
+        """Hareket bittiğinde durumu idle olarak ayarla."""
+        if self.state != "dead":
+            self.state = "idle"
+ninja = Ninja(1, 1)
 
 class Enemy:
-    def __init__(self, x, y, image):
+    def __init__(self, x, y):
         self.x = x
         self.y = y
-        self.image = image
-
-    def update(self):
-        self.x -= 5
-        if self.x < -50:
-            self.x = WIDTH + random.randint(50, 300)
+        self.state = "idle"  # "idle", "run"
+        self.image_index = 0
 
     def draw(self):
-        screen.blit(self.image, (self.x, self.y))
+        if self.state == "idle":
+            image = enemy_idle_image
+        elif self.state == "run":
+            self.image_index = (self.image_index + 1) % len(enemy_run_images)
+            image = enemy_run_images[self.image_index]
+        screen.blit(image, (self.x * TILE_SIZE, self.y * TILE_SIZE))
 
-ninja_images = ['run_001', 'run_002', 'run_003', 'run_004', 'run_005']
-ninja_jump_image = 'jump'
-ninja_die_image = 'dead'
-ninja = Character(100, ground_level - 60, ninja_images, ninja_jump_image, ninja_die_image)
-enemy = Enemy(WIDTH, ground_level - 40, 'meteorbrown_big1')
+    def move(self):
+        dx, dy = random.choice([(-1, 0), (1, 0), (0, -1), (0, 1)])
+        new_x = self.x + dx
+        new_y = self.y + dy
+        if map_grid[new_y][new_x] == " ":
+            self.state = "run"
+            map_grid[self.y][self.x] = " "
+            self.x = new_x
+            self.y = new_y
+            map_grid[self.y][self.x] = "E"
+        else:
+            self.state = "idle"
 
-def update():
-    global state, score, collision_counter
+def draw_menu():
+    screen.clear()
+    screen.draw.text("ANA MENÜ", center=(WIDTH // 2, 100), fontsize=60, color="white")
+    for button in buttons:
+        screen.draw.filled_rect(Rect(button["x"], button["y"], button_width, button_height), "blue")
+        screen.draw.text(button["text"], center=(button["x"] + button_width // 2, button["y"] + button_height // 2), fontsize=30, color="white")
 
-    if state == "game":
-        ninja.update()
-        ninja.animate()
-        enemy.update()
+def on_mouse_down(pos):
+    global game_state, music_playing
+    if game_state == GAME_MENU:
+        for button in buttons:
+            if Rect(button["x"], button["y"], button_width, button_height).collidepoint(pos):
+                if button["action"] == "start_game":
+                    start_game()
+                elif button["action"] == "toggle_music":
+                    toggle_music()
+                elif button["action"] == "exit_game":
+                    exit_game()
 
-        if ninja.alive and Rect((ninja.x, ninja.y), (50, 50)).colliderect(Rect((enemy.x, enemy.y), (50, 50))):
-            ninja.die()
-            collision_counter = 60
-            sounds.background.stop()
-
-        if collision_counter > 0:
-            collision_counter -= 1
-            if collision_counter == 0:
-                state = "gameover"
-
-        if enemy.x < 0 and ninja.alive:
-            score += 1
-
-def on_key_down(key):
-    global state, music_on
-    if state == "menu":
-        if key == keys.SPACE:
-            state = "game"
-            if not music_on:
-                sounds.background.play(-1)
-                music_on = True
-    elif state == "game":
-        if key == keys.SPACE:
-            ninja.jump()
-    elif state == "gameover":
-        if key == keys.R:
-            restart_game()
-
-def on_mouse_down(pos, button):
-    global state, music_on
-    start_rect = Rect((WIDTH // 2 - 100, HEIGHT // 2 - 75), (200, 50))
-    sound_rect = Rect((WIDTH // 2 - 100, HEIGHT // 2), (200, 50))
-    exit_rect = Rect((WIDTH // 2 - 100, HEIGHT // 2 + 75), (200, 50))
-
-    if button == mouse.LEFT:
-        if start_rect.collidepoint(pos):
-            state = "game"
-            if not music_on:
-                sounds.background.play(-1)
-                music_on = True
-        elif sound_rect.collidepoint(pos):
-            toggle_music()
-        elif exit_rect.collidepoint(pos):
-            exit()
-
-    if state == "game" and music_toggle_rect.collidepoint(pos):
-        toggle_music()
+def start_game():
+    global game_state, score
+    game_state = GAME_PLAY
+    score = 0
+    ninja.x, ninja.y = 1, 1  # Ninja başlangıç pozisyonuna yerleştir
+    ninja.draw()
+    create_random_map()
 
 def toggle_music():
-    global music_on
-    if music_on:
+    global music_playing
+    if music_playing:
         sounds.background.stop()
+        music_playing = False
     else:
-        sounds.background.play(-1)
-    music_on = not music_on
+        sounds.background.play()  # Arka plan müziği
+        music_playing = True
 
-def restart_game():
-    global state, score, collision_counter
-    state = "game"
-    score = 0
-    collision_counter = 0
-    enemy.x = WIDTH
-    ninja.alive = True
-    ninja.image = ninja.images[0]
+def exit_game():
+    exit()
+
+def draw_game():
+    screen.clear()
+    for row in range(len(map_grid)):
+        for col in range(len(map_grid[row])):
+            x, y = col * TILE_SIZE, row * TILE_SIZE
+            if map_grid[row][col] == "#":
+                screen.draw.filled_rect(Rect(x, y, TILE_SIZE, TILE_SIZE), "grey")
+            elif map_grid[row][col] == "G":
+                screen.draw.filled_rect(Rect(x, y, TILE_SIZE, TILE_SIZE), "green")
+    ninja.draw()
+    for enemy in enemies:
+            enemy.draw()
+    screen.draw.text(f"Score: {score}", (10, 10), fontsize=24, color="white")
+
+def update_game():
+    global enemy_move_timer
+    ninja.update_animation()
+    enemy_move_timer += 1
+    if enemy_move_timer >= enemy_move_delay:
+        enemy_move_timer = 0
+        for enemy in enemies:
+            enemy.move()
+
+def create_random_map():
+    global map_grid, enemies
+    map_grid = [[" " if random.random() > 0.2 else "#" for _ in range(WIDTH // TILE_SIZE)] for _ in range(HEIGHT // TILE_SIZE)]
+    for i in range(HEIGHT // TILE_SIZE):
+        map_grid[i][0] = map_grid[i][-1] = "#"
+    for j in range(WIDTH // TILE_SIZE):
+        map_grid[0][j] = map_grid[-1][j] = "#"
+    map_grid[ninja.y][ninja.x] = "H"
+    exit_x = random.randint(2, (WIDTH // TILE_SIZE) - 2)
+    exit_y = random.randint(2, (HEIGHT // TILE_SIZE) - 2)
+    map_grid[exit_y][exit_x] = "G"
+    enemies.clear()
+    for _ in range(4):  # 2 düşman
+        while True:
+            enemy_x = random.randint(2, (WIDTH // TILE_SIZE) - 2)
+            enemy_y = random.randint(2, (HEIGHT // TILE_SIZE) - 2)
+            if map_grid[enemy_y][enemy_x] == " ":
+                map_grid[enemy_y][enemy_x] = "E"
+                enemies.append(Enemy(enemy_x, enemy_y))
+                break
+
+def update():
+    global game_state, score,game_over_timer # Global değişkenleri tanımlıyoruz
+    ninja.update_animation()
+    if game_state == GAME_PLAY:
+
+        update_game()
+    elif game_state == GAME_OVER:
+        # Game Over durumunda oyunu sıfırlayıp baştan başlat
+        if game_over_timer > 0:
+            game_over_timer -= 1
+            ninja.state="dead"
+            screen.draw.text("Game Over", center=(WIDTH // 2, HEIGHT // 2), fontsize=60, color="red")
+        else:
+            # "Game Over" yazısını gösterdikten sonra oyunu yeniden başlat
+            game_state = GAME_PLAY
+            score = 0
+            ninja.state="idle"
+            ninja.x, ninja.y = 1, 1
+            create_random_map()
+
+
+def on_key_down(key):
+    if key == keys.UP:
+        ninja.move(0, -1)
+    elif key == keys.DOWN:
+        ninja.move(0, 1)
+    elif key == keys.LEFT:
+        ninja.move(-1, 0)
+    elif key == keys.RIGHT:
+        ninja.move(1, 0)
+
+
+
+def draw():
+    if game_state == GAME_MENU:
+        draw_menu()
+    elif game_state == GAME_PLAY:
+        draw_game()
+
+# Uygulama başladığında müzik otomatik başlatılır
+sounds.background.play()
+music_playing = True
+
+pgzrun.go()
